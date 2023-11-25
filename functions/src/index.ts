@@ -65,17 +65,23 @@ app.post("/games/:gameId/players/:player", async (req, res) => {
   // add new player to the game
   const newPlayerRef = await playersRef.add({username: player, gameId: gameId});
 
-  const unitTypes = ["Soldier", "Archer", "Wizard", "Knight", "Zombie"];
+  const unitTypesAndHealth = {
+    Soldier: 100,
+    Archer: 80,
+    Wizard: 60,
+    Knight: 120,
+    Zombie: 90,
+  };
   const units = [];
   const unitsRef = db.collection("units");
 
   // Add initial units for the player
-  for (const unitType of unitTypes) {
+  for (const [unitType, health] of Object.entries(unitTypesAndHealth)) {
     const unitData = {
       type: unitType,
       gameId: gameId,
       playerId: newPlayerRef.id,
-      health: 100, // They should have 100 health each when created
+      health: health,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
     const unitRef = await unitsRef.add(unitData);
@@ -205,7 +211,7 @@ app.post("/games/:gameId/players/:playerId/unit/:unitId/attack/:targetId",
       };
 
       // Decrease target's health by a variable amount depending on attacker's strength
-      const damage = Math.floor(Math.random() * 11) +
+      const damage = Math.floor(Math.random() * 15) +
         attackerStrength[attackerData.type as keyof typeof attackerStrength];
       const newHealth = targetData.health - damage;
 
