@@ -63,57 +63,100 @@ app.post("/games/:gameId/players/:player", async (req, res) => {
   }
 
   // add new player to the game
-  await playersRef.add({username: player, gameId: gameId});
-  return res.send({joined: true});
+  const newPlayerRef = await playersRef.add({username: player, gameId: gameId});
+
+  const unitTypes = ["Soldier", "Archer", "Wizard", "Knight", "Zombie"];
+  const units = [];
+  const unitsRef = db.collection("units");
+
+  // Add initial units for the player
+  for (const unitType of unitTypes) {
+    const unitData = {
+      type: unitType,
+      gameId: gameId,
+      playerId: newPlayerRef.id,
+      health: 100, // They should have 100 health each when created
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    const unitRef = await unitsRef.add(unitData);
+    const newUnit = {...unitData, id: unitRef.id};
+    units.push(newUnit);
+  }
+
+  // return new player's ID and the initial units
+  return res.send({joined: true, playerId: newPlayerRef.id, units: units});
 });
 
-// Create a new unit for a specific game and player
-app.post("/games/:gameId/players/:playerId/units/:unitType",
+
+// Attack another unit
+app.post("/games/:gameId/players/:playerId/unit/:unitId/attack/:targetId",
     async (req, res) => {
       const gameId = req.params.gameId;
       const playerId = req.params.playerId;
-      const unitType = req.params.unitType;
+      const unitId = req.params.unitId;
+      const targetId = req.params.targetId;
 
-      // Check if unit type is valid
-      const validUnits = ["Solider", "Archer", "Wizard", "Knight", "Zombie"];
-      if (!validUnits.includes(unitType)) {
-        return res.status(400)
-            .send(`Invalid unit type. 
-        Must be one of the following: ${validUnits.join(", ")}`);
-      }
-
-      // Ensure player exists in game
+      // Ensure player exists in the game
       const playersRef = db.collection("players");
       const playerSnapshot = await playersRef.doc(playerId).get();
 
-      if (!playerSnapshot.exists) {
-        return res.status(400).send("Player does not exist " +
-          "— make sure to provide a playerID, not a username");
-      }
       const playerData = playerSnapshot.data();
 
-      if (!playerData || playerData.gameId !== gameId) {
-        return res.status(400).send("Game does not exist");
+      if (!playerSnapshot.exists ||
+          playerData && playerData.gameId !== gameId) {
+        return res.status(400).send("Player or game does not exist");
       }
 
-      // Check if player already has five units
+      // Retrieve player's units
       const unitsRef = db.collection("units");
-      const unitSnapshot = await unitsRef
-          .where("playerId", "==", playerId).get();
-      if (unitSnapshot.size >= 5) {
-        return res.status(400).send("Player has already created five units");
+      const attackerRef = await unitsRef.doc(unitId).get();
+      const targetRef = await unitsRef.doc(targetId).get();
+
+      // Ensure both units exist
+      if (!attackerRef.exists || !targetRef.exists) {
+        return res.status(400).send("Attacker or target does not exist");
       }
 
-      // Add new unit to the units collection
-      const unit = {
-        type: unitType,
-        gameId: gameId,
-        playerId: playerId,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      const attackerData = attackerRef.data();
+      const targetData = targetRef.data();
+
+      if (!attackerData || !targetData) {
+        return res.status(400).send("Attacker or target does not exist");
+      }
+
+      // Check if the attacker and target are in the same game
+      if (attackerData.gameId !== targetData.gameId) {
+        return res.status(400).send("Attacker and target are not in the same game");
+      }
+
+      // Check if the attacker and target are owned by the same player
+      if (attackerData.playerId === targetData.playerId) {
+        return res.status(400).send("Attacker and target are owned by the same player");
+      }
+
+      const attackerStrength = {
+        "Zombie": 12,
+        "Soldier": 20,
+        "Archer": 10,
+        "Wizard": 5,
+        "Knight": 18,
       };
 
-      const unitRef = await unitsRef.add(unit);
-      return res.send({id: unitRef.id});
+      // Decrease target's health by a variable amount depending on attacker's strength
+      const damage = Math.floor(Math.random() * 11) +
+        attackerStrength[attackerData.type as keyof typeof attackerStrength];
+      const newHealth = targetData.health - damage;
+
+      // Check if target's health is below 0
+      if (newHealth <= 0) {
+        // Delete target unit from database
+        await unitsRef.doc(targetId).delete();
+        return res.send("Target unit has been killed");
+      } else {
+        // Update target's health
+        await unitsRef.doc(targetId).update({health: newHealth});
+        return res.send({message: "Attack was successful", dealtDamage: damage, targetNewHealth: newHealth});
+      }
     });
 
 // Get all units for a specific player in a game
