@@ -87,6 +87,68 @@ app.post("/games/:gameId/players/:player", async (req, res) => {
   return res.send({joined: true, playerId: newPlayerRef.id, units: units});
 });
 
+// Healing
+app.post("/games/:gameId/players/:playerId/unit/:unitId/heal/:targetId",
+    async (req, res) => {
+      const gameId = req.params.gameId;
+      const playerId = req.params.playerId;
+      const unitId = req.params.unitId;
+      const targetId = req.params.targetId;
+
+      // Ensure player exists in the game
+      const playersRef = db.collection("players");
+      const playerSnapshot = await playersRef.doc(playerId).get();
+
+      const playerData = playerSnapshot.data();
+
+      if (!playerSnapshot.exists || playerData && playerData.gameId !== gameId) {
+        return res.status(400).send("Player or game does not exist");
+      }
+
+      // Retrieve player's unit
+      const unitsRef = db.collection("units");
+      const healerRef = await unitsRef.doc(unitId).get();
+      const targetRef = await unitsRef.doc(targetId).get();
+
+      // Ensure both units exist
+      if (!healerRef.exists || !targetRef.exists) {
+        return res.status(400).send("Healer or target does not exist");
+      }
+
+      const healerData = healerRef.data();
+      const targetData = targetRef.data();
+
+      if (!healerData || !targetData) {
+        return res.status(400).send("Healer or target does not exist");
+      }
+
+      // Check if the healer and target are in the same game
+      if (healerData.gameId !== targetData.gameId) {
+        return res.status(400).send("Healer and target are not in the same game");
+      }
+
+      // Only the Wizard can heal
+      if (healerData.type !== "Wizard") {
+        return res.status(400).send("Only the Wizard can heal");
+      }
+
+      // Increase target's health by a variable amount depending on healer's strength
+      const healing = Math.floor(Math.random() * 11) + 15;
+      const newHealth = targetData.health + healing;
+
+      // Set max health
+      const maxHealth = 100;
+      if (newHealth > maxHealth) {
+        // Update target's health to max health
+        await unitsRef.doc(targetId).update({health: maxHealth});
+        return res.send({message: "Healing was successful", healedAmount: healing, targetNewHealth: maxHealth});
+      } else {
+        // Update target's health
+        await unitsRef.doc(targetId).update({health: newHealth});
+        return res.send({message: "Healing was successful", healedAmount: healing, targetNewHealth: newHealth});
+      }
+    });
+
 
 // Attack another unit
 app.post("/games/:gameId/players/:playerId/unit/:unitId/attack/:targetId",
@@ -158,6 +220,7 @@ app.post("/games/:gameId/players/:playerId/unit/:unitId/attack/:targetId",
         return res.send({message: "Attack was successful", dealtDamage: damage, targetNewHealth: newHealth});
       }
     });
+
 
 // Get all units for a specific player in a game
 app.get("/games/:gameId/players/:playerId/units",
