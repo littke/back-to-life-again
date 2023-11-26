@@ -9,6 +9,18 @@ const app = express();
 
 app.use(cors({origin: true}));
 
+const itemTypes = [{
+  name: "Potion",
+  description: "A potion that heals 10 health",
+  effect: "health",
+  amount: 30,
+}, {
+  name: "Book",
+  description: "A book that gives 10 experience",
+  effect: "experience",
+  amount: 30,
+}];
+
 /**
   * Triggered when a new unit is created.
   * Checks if the unit has enough experience to level up.
@@ -376,6 +388,60 @@ app.get("/games/:gameId/players/:playerId/units",
 
       return res.send(units);
     });
+
+// Ability to pick up an item, which will give experience to the unit
+app.post("/games/:gameId/unit/:unitId/pickup/:item", async (req, res) => {
+  const gameId = req.params.gameId;
+  const unitId = req.params.unitId;
+  const item = itemTypes.find((itemType) => itemType.name.toLowerCase() === req.params.item.toLocaleLowerCase());
+
+  // Ensure item exists
+  if (!item) {
+    return res.status(400).send("An item with that name does not exist. Available items are: " +
+      itemTypes.map((itemType) => itemType.name).join(", "));
+  }
+
+  // Ensure unit exists in the game
+  const unitsRef = db.collection("units");
+  const unitSnapshot = await unitsRef.doc(unitId).get();
+
+  const unitData = unitSnapshot.data();
+
+  if (!unitSnapshot.exists ||
+      !unitData || unitData.gameId !== gameId) {
+    return res.status(400).send("Unit does not exist or is not in this game");
+  }
+
+  // Give the unit the item's effect
+  let newAmount = 0;
+  if (item.effect === "experience") {
+    newAmount = unitData.experience + item.amount;
+    await unitsRef.doc(unitId).update({experience: newAmount});
+
+    // Check if the unit has enough experience to level up
+    await checkUnitUpgrade(unitId);
+  } else if (item.effect === "health") {
+    newAmount = unitData.health + item.amount;
+
+    // Never update above max health
+    if (newAmount > unitData.maxHealth) {
+      // Update unit's health to max health
+      await unitsRef.doc(unitId).update({health: unitData.maxHealth});
+      newAmount = unitData.maxHealth;
+      item.amount = unitData.maxHealth - unitData.health;
+    } else {
+      // Update unit's health
+      await unitsRef.doc(unitId).update({health: newAmount});
+    }
+  }
+
+  return res.send({
+    message: "Item picked up successfully",
+    effect: item.effect,
+    amount: item.amount,
+    newAmount: newAmount,
+  });
+});
 
 
 exports.app = functions.https.onRequest(app);

@@ -119,3 +119,45 @@ paths:
           required: true
           schema:
             type: string
+  /games/{gameId}/unit/{unitId}/pickup/{item}:
+    post:
+      x-openai-isConsequential: false
+      operationId: pickupItem
+      parameters:
+        - in: path
+          name: gameId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: unitId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: item
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Item picked up successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  effect:
+                    type: string
+                  amount:
+                    type: integer
+                  newAmount:
+                    type: integer
+        '400':
+          description: An item with that name does not exist or unit does not exist
+          content:
+            text/plain:
+              schema:
+                type: string
