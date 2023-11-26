@@ -9,6 +9,51 @@ const app = express();
 
 app.use(cors({origin: true}));
 
+/**
+  * Triggered when a new unit is created.
+  * Checks if the unit has enough experience to level up.
+  *
+  * @param {string} unitId - The ID of the unit.
+  */
+async function checkUnitUpgrade(unitId: string) {
+  const unitsRef = db.collection("units");
+  const unitRef = await unitsRef.doc(unitId).get();
+  const unitData = unitRef.data();
+
+  if (!unitData) {
+    return;
+  }
+
+  let newLevel = unitData.level;
+  let availableExperience = unitData.experience;
+  const healthPercentage = unitData.health / unitData.maxHealth;
+
+  // Calculate max experience for next level
+  let maxExperience = 10 * (newLevel + 1);
+
+  while (availableExperience >= maxExperience) {
+    // level up and calculate remaining experience
+    newLevel += 1;
+    availableExperience -= maxExperience;
+
+    // calculate max experience for next level
+    maxExperience = 10 * (newLevel + 1);
+  }
+
+  if (newLevel > unitData.level) {
+    const newMaxHealth = unitData.maxHealth + (10 * newLevel);
+    const newHealth = Math.round(healthPercentage * newMaxHealth);
+
+    // Level up the unit
+    await unitsRef.doc(unitId).update({
+      level: newLevel,
+      experience: availableExperience, // Set remaining experience
+      health: newHealth, // Calculate new current health based on original percentage.
+      maxHealth: newMaxHealth, // Increase max health for each level,
+    });
+  }
+}
+
 // List all games in the games collection
 app.all("/games", async (req, res) => {
   const date24HoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -76,12 +121,15 @@ app.post("/games/:gameId/players/:player", async (req, res) => {
   const unitsRef = db.collection("units");
 
   // Add initial units for the player
-  for (const [unitType, health] of Object.entries(unitTypesAndHealth)) {
+  for (const [unitType, maxHealth] of Object.entries(unitTypesAndHealth)) {
     const unitData = {
       type: unitType,
       gameId: gameId,
       playerId: newPlayerRef.id,
-      health: health,
+      health: maxHealth,
+      maxHealth: maxHealth,
+      level: 1,
+      experience: 0,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
     const unitRef = await unitsRef.add(unitData);
@@ -139,20 +187,28 @@ app.post("/games/:gameId/players/:playerId/unit/:unitId/heal/:targetId",
       }
 
       // Increase target's health by a variable amount depending on healer's strength
-      const healing = Math.floor(Math.random() * 11) + 15;
-      const newHealth = targetData.health + healing;
+      let healing = Math.floor(Math.random() * 11) + 15;
+      let newHealth = targetData.health + healing;
 
-      // Set max health
-      const maxHealth = 100;
-      if (newHealth > maxHealth) {
+      // Never update above max health
+      if (newHealth > targetData.maxHealth) {
+        healing = targetData.maxHealth - targetData.health;
         // Update target's health to max health
-        await unitsRef.doc(targetId).update({health: maxHealth});
-        return res.send({message: "Healing was successful", healedAmount: healing, targetNewHealth: maxHealth});
+        await unitsRef.doc(targetId).update({health: targetData.maxHealth});
+        newHealth = targetData.maxHealth;
       } else {
         // Update target's health
         await unitsRef.doc(targetId).update({health: newHealth});
-        return res.send({message: "Healing was successful", healedAmount: healing, targetNewHealth: newHealth});
       }
+
+      // Give the wizard some experience
+      const newExperience = healerData.experience + 10;
+      await unitsRef.doc(unitId).update({experience: newExperience});
+
+      // Check if the wizard has enough experience to level up
+      await checkUnitUpgrade(unitId);
+
+      return res.send({message: "Healing was successful", healedAmount: healing, targetNewHealth: newHealth});
     });
 
 
@@ -217,10 +273,25 @@ app.post("/games/:gameId/players/:playerId/unit/:unitId/attack/:targetId",
 
       // Check if target's health is below 0
       if (newHealth <= 0) {
+        // Give the attacker some experience
+        const newExperience = attackerData.experience + 15;
+        await unitsRef.doc(unitId).update({experience: newExperience});
+
+        // Check if the attacker has enough experience to level up
+        await checkUnitUpgrade(unitId);
+
         // Delete target unit from database
         await unitsRef.doc(targetId).delete();
-        return res.send("Target unit has been killed");
+        return res.send("Target unit has been killed and the attacker was awarded " +
+          "15 experience.");
       } else {
+        // Give the attacker some experience
+        const newExperience = attackerData.experience + 5;
+        await unitsRef.doc(unitId).update({experience: newExperience});
+
+        // Check if the attacker has enough experience to level up
+        await checkUnitUpgrade(unitId);
+
         // Update target's health
         await unitsRef.doc(targetId).update({health: newHealth});
         return res.send({message: "Attack was successful", dealtDamage: damage, targetNewHealth: newHealth});
