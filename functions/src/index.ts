@@ -58,18 +58,27 @@ async function checkUnitUpgrade(unitId: string) {
 app.all("/games", async (req, res) => {
   const date24HoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const gamesRef = db.collection("games");
-  const snapshot = await gamesRef.where("createdAt", ">", date24HoursAgo).get();
+  const playersRef = db.collection("players");
+  const gamesSnapshot = await gamesRef.where("createdAt", ">", date24HoursAgo).get();
+  // Get all the players that are part of any of the games
+  const playersSnapshot = await playersRef.where("gameId", "in", gamesSnapshot.docs.map((game) => game.id)).get();
 
   const games: any[] = [];
-  snapshot.forEach((game) => {
+  gamesSnapshot.forEach((game) => {
     const gameData = game.data();
     gameData.id = game.id;
+
     games.push({
       name: gameData.name,
       createdAt: gameData.createdAt,
-      players: gameData.players,
+      players: playersSnapshot.docs.filter((player) =>
+        player.data().gameId === game.id).map((player) => ({
+        username: player.data().username,
+        id: player.id,
+      })),
     });
   });
+  // Return the games and the players along with their ID and usernamejkk
   return res.send(games);
 });
 
