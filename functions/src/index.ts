@@ -60,25 +60,33 @@ app.all("/games", async (req, res) => {
   const gamesRef = db.collection("games");
   const playersRef = db.collection("players");
   const gamesSnapshot = await gamesRef.where("createdAt", ">", date24HoursAgo).get();
-  // Get all the players that are part of any of the games
-  const playersSnapshot = await playersRef.where("gameId", "in", gamesSnapshot.docs.map((game) => game.id)).get();
+
+  if (gamesSnapshot.empty) {
+    return res.send([]);
+  }
 
   const games: any[] = [];
-  gamesSnapshot.forEach((game) => {
+
+  // Fetch players for each game in parallel
+  await Promise.all(gamesSnapshot.docs.map(async (game) => {
     const gameData = game.data();
-    gameData.id = game.id;
+
+    // Get the players for this specific game
+    const playersSnapshot = await playersRef.where("gameId", "==", game.id).get();
+    const players = playersSnapshot.docs.map((player) => ({
+      username: player.data().username,
+      id: player.id,
+    }));
 
     games.push({
       name: gameData.name,
       createdAt: gameData.createdAt,
-      players: playersSnapshot.docs.filter((player) =>
-        player.data().gameId === game.id).map((player) => ({
-        username: player.data().username,
-        id: player.id,
-      })),
+      id: game.id,
+      players: players,
     });
-  });
-  // Return the games and the players along with their ID and usernamejkk
+  }));
+
+  // Return the games and the players along with their ID and username
   return res.send(games);
 });
 
@@ -307,6 +315,35 @@ app.post("/games/:gameId/players/:playerId/unit/:unitId/attack/:targetId",
       }
     });
 
+
+// Get all units for ALL players in a game
+app.get("/games/:gameId/players/units",
+    async (req, res) => {
+      const gameId = req.params.gameId;
+
+      // Ensure player exists in the game
+      const playersRef = db.collection("players");
+      const playersSnapshot = await playersRef.where("gameId", "==", gameId).get();
+
+      const players: any[] = playersSnapshot.docs.map((doc) => doc.id);
+
+      if (!players.length) {
+        return res.status(400).send("No players in that game");
+      }
+
+      // Retrieve player's units
+      const unitsRef = db.collection("units");
+      const unitsSnapshot = await unitsRef.where("playerId", "in", players).get();
+
+      const units: any[] = [];
+      unitsSnapshot.forEach((doc) => {
+        const unitData = doc.data();
+        unitData.id = doc.id;
+        units.push(unitData);
+      });
+
+      return res.send(units);
+    });
 
 // Get all units for a specific player in a game
 app.get("/games/:gameId/players/:playerId/units",

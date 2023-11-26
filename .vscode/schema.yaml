@@ -1,0 +1,121 @@
+openapi: "3.0.2"
+
+info: 
+  title: Game API
+  version: 1.0.0
+servers:
+  - url: https://us-central1-back-to-life-again.cloudfunctions.net/app
+  
+paths:
+  /games:
+    get:
+      operationId: getGames
+      responses:
+        '200':
+          description: Successful fetching of games
+      x-openai-isConsequential: false
+  /games/{game}:
+    post:
+      operationId: createGame
+      x-openai-isConsequential: false
+      parameters:
+        - in: path
+          name: game
+          required: true
+          schema:
+            type: string
+  /games/{gameId}/players/{player}:
+    post:
+      operationId: joinGame
+      x-openai-isConsequential: false
+      parameters:
+        - in: path
+          name: gameId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: player
+          required: true
+          schema:
+            type: string
+  /games/{gameId}/players/{playerId}/unit/{unitId}/heal/{targetId}:
+    post:
+      operationId: healUnit
+      x-openai-isConsequential: false
+      parameters:
+        - in: path
+          name: gameId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: playerId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: unitId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: targetId
+          required: true
+          schema:
+            type: string
+  /games/{gameId}/players/{playerId}/unit/{unitId}/attack/{targetId}:
+    post:
+      operationId: attackUnit
+      x-openai-isConsequential: false
+      parameters:
+        - in: path
+          name: gameId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: playerId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: unitId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: targetId
+          required: true
+          schema:
+            type: string
+  /games/{gameId}/players/units/{playerId}/units/{unitId}:
+    get:
+      operationId: getPlayerUnits
+      x-openai-isConsequential: false
+      parameters:
+        - in: path
+          name: gameId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: playerId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: unitId
+          required: true
+          schema:
+            type: string
+  /games/{gameId}/players/units:
+    get:
+      operationId: getAllPlayerUnits
+      x-openai-isConsequential: false
+      parameters:
+        - in: path
+          name : gameId
+          required: true
+          schema:
+            type: string
